@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Galactic Hero: Interactive Adventure</title>
+    <title>AI 동화 모험: 나만의 이야기 만들기</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
@@ -89,11 +89,9 @@
         import { 
             Rocket, Download, Play, Square, Loader2, 
             Zap, Volume2, Settings2, ChevronDown, Orbit, Heart, Shield, Ghost,
-            Star, Trophy, Medal, PenTool, Save, RotateCcw, BookOpen
+            Star, Trophy, Medal, PenTool, Save, RotateCcw, BookOpen, Key
         } from 'lucide-react';
         import { motion, AnimatePresence } from 'framer-motion';
-
-        const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
         function App() {
             const [name, setName] = useState('');
@@ -111,6 +109,10 @@
             const [savedStories, setSavedStories] = useState([]);
             const [isArchiveOpen, setIsArchiveOpen] = useState(false);
             const [statusMessage, setStatusMessage] = useState('');
+            
+            // API Key State
+            const [apiKey, setApiKey] = useState(localStorage.getItem('gemini_api_key') || '');
+            const [inputKey, setInputKey] = useState(localStorage.getItem('gemini_api_key') || '');
             
             const audioRef = useRef(null);
             const scrollRef = useRef(null);
@@ -168,7 +170,6 @@
             const loadVoices = useCallback(() => {
                 let availableVoices = window.speechSynthesis.getVoices();
                 if (availableVoices.length === 0) return;
-                // Filter: ko or en only
                 const filtered = availableVoices.filter(v => v.lang.includes('ko') || v.lang.includes('en'));
                 setVoices(filtered.length > 0 ? filtered : availableVoices);
             }, []);
@@ -188,18 +189,50 @@
                 };
             }, [loadVoices, voices.length]);
 
+            const saveApiKey = () => {
+                localStorage.setItem('gemini_api_key', inputKey);
+                setApiKey(inputKey);
+                setIsSettingsOpen(false);
+            };
+
             const generatePart = async (choice = null) => {
+                const themes = [
+                    '신비한 마법의 숲', 
+                    '깊고 푸른 바닷속 왕국', 
+                    '구름 위 둥둥 하늘나라', 
+                    '장난감들이 살아나는 방', 
+                    '달콤한 디저트 마을', 
+                    '말하는 동물들의 숲속 학교', 
+                    '반짝이는 별똥별 우주선', 
+                    '신나는 공룡 시대'
+                ];
+
+                if (!apiKey) {
+                    setStatusMessage("설정(톱니바퀴)에서 API 키를 먼저 입력해 주세요!");
+                    setIsSettingsOpen(true);
+                    return;
+                }
+
                 setIsLoading(true);
                 setIsFinished(false);
                 setStatusMessage('');
                 
                 try {
+                    const genAI = new GoogleGenAI({ apiKey: apiKey });
                     const isFirst = storyParts.length === 0;
+                    
+                    let themeInstruction = "";
+                    if (isFirst) {
+                        const randomTheme = themes[Math.floor(Math.random() * themes.length)];
+                        themeInstruction = `이번 이야기의 무작위 배경은 '${randomTheme}'입니다. 이 테마에 맞춰서 이야기를 시작하세요.`;
+                    }
+
                     const currentPartNum = storyParts.length + 1;
                     const context = storyParts.map(p => p.text).join('\n');
                     
                     const prompt = `
                         당신은 5~10세 어린이를 위한 최고의 동화 작가입니다.
+                        ${themeInstruction}
                         주인공 이름: ${name}
                         현재까지의 이야기: ${isFirst ? '시작 전' : context}
                         사용자의 선택: ${choice || '이야기 시작'}
@@ -209,16 +242,18 @@
                         1. **언어 수준**: 5~10세 아이들이 이해하기 쉬운 아주 쉬운 단어와 짧은 문장을 사용하세요. 어려운 한자어나 복잡한 문장 구조는 피하고, 엄마가 머리맡에서 읽어주는 것처럼 다정하고 쉬운 말투로 작성하세요.
                         2. **나이 언급 금지**: 이야기 속에 "10살 소년", "몇 살인 누구"와 같이 주인공의 나이를 직접적으로 언급하는 문구는 절대 넣지 마세요.
                         3. **내용**: 판타지, 일상, 미스터리, 모험 등 아이들의 상상력을 자극하는 따뜻하고 재미있는 이야기를 이어가세요.
-                        4. 이번 파트의 텍스트(약 300~400자 내외)를 작성하세요.
-                        5. 만약 이번이 5번째 파트라면, 반드시 이야기를 감동적이고 재미있게 마무리하고 'FINISH'라고 작성하세요.
-                        6. 5번째 파트가 아니라면, 이야기가 절정에 달했을 때 멈추고 다음에 이어질 두 가지 선택지를 제시하세요.
-                        7. 이 장면을 묘사할 수 있는 짧은 영어 키워드 1개를 'IMAGE_KEYWORD: [영단어]' 형식으로 포함하세요.
-                        8. 선택지는 'CHOICE1: [내용]', 'CHOICE2: [내용]' 형식으로 작성하세요.
+                        4. 뻔한 전개(예: 빛나는 돌을 줍거나 길을 잃는 등)를 피하고, 매번 새롭고 예측할 수 없는 독창적인 사건, 마법, 등장인물을 만들어주세요.
+                        5. 이번 파트의 텍스트(약 300~400자 내외)를 작성하세요.
+                        6. 만약 이번이 5번째 파트라면, 반드시 이야기를 감동적이고 재미있게 마무리하고 'FINISH'라고 작성하세요.
+                        7. 5번째 파트가 아니라면, 이야기가 절정에 달했을 때 멈추고 다음에 이어질 두 가지 선택지를 제시하세요.
+                        8. 이 장면을 묘사할 수 있는 짧은 영어 키워드 1개를 'IMAGE_KEYWORD: [영단어]' 형식으로 포함하세요.
+                        9. 선택지는 'CHOICE1: [내용]', 'CHOICE2: [내용]' 형식으로 작성하세요.
                     `;
 
                     const result = await genAI.models.generateContent({
                         model: "gemini-3-flash-preview",
                         contents: prompt,
+                        config: { temperature: 0.9, topK: 40 }
                     });
 
                     const responseText = result.text;
@@ -264,6 +299,8 @@
                     console.error("Error:", error);
                     if (error.message?.includes('429') || error.message?.includes('quota')) {
                         setStatusMessage('현재 통신량이 많아 잠시 후 다시 시도해 주세요. (Quota Exceeded)');
+                    } else if (error.message?.includes('API_KEY_INVALID') || error.message?.includes('invalid')) {
+                        setStatusMessage('API 키가 올바르지 않습니다. 설정에서 다시 확인해 주세요.');
                     } else {
                         setStatusMessage('통신 중 오류가 발생했습니다. 다시 시도해 주세요.');
                     }
@@ -313,7 +350,7 @@
             return React.createElement('div', { className: "min-h-screen flex flex-col items-center p-4 pb-20" },
                 React.createElement('audio', { key: 'audio', ref: audioRef, src: BGM_URL, loop: true }),
                 
-                // Header with Badge
+                // Header
                 React.createElement('header', { key: 'header', className: "w-full max-w-2xl pt-8 pb-6 flex flex-col items-center" },
                     React.createElement(motion.div, {
                         key: 'badge',
@@ -420,21 +457,21 @@
                             React.createElement('div', { key: 'status-indicator', className: "col-span-full flex flex-col items-center py-8 text-orange-400 gap-4" }, 
                                 React.createElement('span', { key: 'status-text', className: "text-xs font-bold uppercase tracking-widest text-center" }, statusMessage),
                                 React.createElement('button', {
-                                    onClick: () => generatePart(choice),
+                                    onClick: () => generatePart(),
                                     className: "px-6 py-2 glass border-orange-500/30 text-orange-400 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-orange-500/10 transition-all"
                                 }, "다시 시도")
                             )
                          : React.createElement(React.Fragment, { key: 'choices-list' }, currentChoices.map((choice, i) => React.createElement('button', {
                             key: `choice-${i}`,
                             onClick: () => generatePart(choice),
-                            className: "choice-btn p-6 glass border-sky-500/30 rounded-2xl text-left text-sm font-medium hover:border-sky-400 transition-all text-sky-100 flex items-center gap-4"
+                            className: "choice-btn p-6 glass border-sky-500/30 rounded-2xl text-left text-sm font-medium hover:border-sky-400 transition-all text-sky-600 flex items-center gap-4"
                         }, 
                             React.createElement('div', { key: 'choice-num', className: "w-8 h-8 rounded-full bg-sky-500/20 flex items-center justify-center text-sky-400 font-bold text-xs shrink-0" }, i + 1),
                             choice
                         ))))
                     ),
 
-                    // Finish & Diary
+                    // Finish Screen
                     isFinished && React.createElement(motion.section, {
                         key: 'finish-screen',
                         initial: { opacity: 0, scale: 0.9 },
@@ -474,7 +511,7 @@
                     )
                 ),
 
-                // Footer Controls
+                // Footer
                 React.createElement('footer', { key: 'footer', className: "fixed bottom-0 left-0 w-full glass border-t border-sky-500/10 p-4 flex justify-center z-50" }, 
                     React.createElement('div', { key: 'footer-content', className: "w-full max-w-2xl flex items-center justify-between px-4" }, 
                         React.createElement('button', {
@@ -482,41 +519,65 @@
                             onClick: () => setIsSettingsOpen(!isSettingsOpen),
                             className: "p-2 text-slate-500 hover:text-sky-400 transition-colors"
                         }, React.createElement(Settings2, { size: 20 })),
-                        React.createElement('div', { key: 'progress-track', className: "flex-1 mx-8 h-1 bg-slate-800 rounded-full overflow-hidden" }, 
+                        React.createElement('div', { key: 'progress-track', className: "flex-1 mx-8 h-1 bg-slate-200 rounded-full overflow-hidden" }, 
                             React.createElement(motion.div, {
                                 key: 'progress-bar',
                                 animate: { width: `${readingProgress}%` },
                                 className: "h-full bg-sky-500 shadow-[0_0_10px_rgba(56,189,248,0.5)]"
                             })
                         ),
-                        React.createElement('div', { key: 'version', className: "text-[8px] font-bold text-slate-400 uppercase tracking-widest" }, "Story v5.0")
+                        React.createElement('div', { key: 'version', className: "text-[8px] font-bold text-slate-400 uppercase tracking-widest" }, "Story v6.0")
                     )
                 ),
 
-                // Voice Settings Modal
+                // Settings Modal
                 isSettingsOpen && React.createElement('div', {
-                    key: 'voice-settings',
+                    key: 'settings-modal',
                     className: "fixed inset-0 z-[60] flex items-end justify-center p-4 bg-black/60 backdrop-blur-sm",
                     onClick: () => setIsSettingsOpen(false)
                 }, React.createElement(motion.div, {
                     key: 'settings-panel',
                     initial: { y: '100%' },
                     animate: { y: 0 },
-                    className: "w-full max-w-md glass rounded-t-3xl p-6 space-y-4",
+                    className: "w-full max-w-md glass rounded-t-3xl p-6 space-y-6",
                     onClick: e => e.stopPropagation()
                 }, 
-                    React.createElement('h3', { key: 'settings-title', className: "text-xs font-bold uppercase tracking-widest text-sky-600" }, "음성 설정"),
-                    React.createElement('select', {
-                        key: 'voice-select',
-                        value: selectedVoiceIndex,
-                        onChange: (e) => setSelectedVoiceIndex(Number(e.target.value)),
-                        className: "w-full bg-white text-sky-600 text-xs outline-none p-3 rounded-xl border border-sky-500/20"
-                    }, React.createElement(React.Fragment, { key: 'voice-options' }, voices.map((v, i) => React.createElement('option', { key: `voice-${v.name}-${i}`, value: i }, `${v.name} (${v.lang})`)))),
+                    // API Key Section
+                    React.createElement('div', { key: 'api-section', className: "space-y-3" },
+                        React.createElement('h3', { className: "text-xs font-bold uppercase tracking-widest text-sky-600 flex items-center gap-2" }, 
+                            React.createElement(Key, { size: 14 }), "통신 설정 (Gemini API)"
+                        ),
+                        React.createElement('div', { className: "flex gap-2" },
+                            React.createElement('input', {
+                                type: "password",
+                                value: inputKey,
+                                onChange: (e) => setInputKey(e.target.value),
+                                placeholder: "API 키를 입력하세요",
+                                className: "flex-1 bg-white text-slate-800 text-xs outline-none p-3 rounded-xl border border-sky-500/20 focus:border-sky-400"
+                            }),
+                            React.createElement('button', {
+                                onClick: saveApiKey,
+                                className: "px-4 py-3 bg-sky-600 text-white rounded-xl font-bold text-xs uppercase tracking-widest"
+                            }, "키 저장")
+                        ),
+                        React.createElement('p', { className: "text-[8px] text-slate-400" }, "* 입력된 키는 브라우저에만 안전하게 저장됩니다.")
+                    ),
+
+                    // Voice Section
+                    React.createElement('div', { key: 'voice-section', className: "space-y-3" },
+                        React.createElement('h3', { className: "text-xs font-bold uppercase tracking-widest text-sky-600" }, "음성 설정"),
+                        React.createElement('select', {
+                            value: selectedVoiceIndex,
+                            onChange: (e) => setSelectedVoiceIndex(Number(e.target.value)),
+                            className: "w-full bg-white text-sky-600 text-xs outline-none p-3 rounded-xl border border-sky-500/20"
+                        }, voices.map((v, i) => React.createElement('option', { key: `voice-${i}`, value: i }, `${v.name} (${v.lang})`)))
+                    ),
+
                     React.createElement('button', {
-                        key: 'apply-btn',
+                        key: 'close-settings',
                         onClick: () => setIsSettingsOpen(false),
-                        className: "w-full py-3 bg-sky-600 text-white rounded-xl font-bold text-xs uppercase tracking-widest"
-                    }, "설정 적용")
+                        className: "w-full py-3 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs uppercase tracking-widest"
+                    }, "닫기")
                 )),
 
                 // Archive Modal
@@ -559,4 +620,3 @@
     </script>
 </body>
 </html>
-
